@@ -50,19 +50,23 @@ def fetch_page_text(url, max_chars=4000):
     return text[:max_chars]
 
 
-def build_draft_prompt(product_name, model_no, page_info, usage_context, length):
+def build_draft_prompt(product_name, model_no, price, usage_info, page_info, usage_context, length):
     return f"""당신은 이 제품을 실제로 구매해서 사용해 본 일반 소비자입니다.
 아래 정보를 참고해서, 쇼핑몰 리뷰 게시판에 올릴 법한 실제 사용 후기를 작성하세요.
 
 [제품 정보]
 - 상품명: {product_name}
 - 모델명: {model_no or "미기재"}
+- 가격(쿠팡 최저가 기준): {price or "미기재"}
+- 사용법/주요 기능: {usage_info or "미기재"}
 - 상품 설명 페이지 내용(자동 추출): {page_info or "미기재"}
 - 사용 기간/상황: {usage_context or "미기재"}
 
 [작성 규칙]
 - 1인칭 사용 후기 톤으로 작성
-- 장점 위주로 쓰되, 사소한 단점 1~2가지를 자연스럽게 섞어서 언급
+- 기본적으로 장점 위주로 작성할 것
+- 단점은 아주 미미하게만 다루고, 언급할지 말지는 리뷰 맥락상 자연스러운 쪽으로 알아서 판단할 것 (단점 없이 장점만으로 마무리해도 됨)
+- 단점을 언급하는 경우, 가격 대비 만족도나 다른 기능적 장점이 그 단점을 충분히 상쇄한다는 뉘앙스로 자연스럽게 연결해서 단점이 부각되지 않도록 할 것
 - 광고 문구처럼 과장하지 말고, 실제 사용 장면과 구체적인 느낀 점을 담을 것
 - 이모티콘은 쓰지 않거나 최소화
 - 전체 글자 수는 공백 포함 약 {length}자 내외로 맞출 것
@@ -112,8 +116,13 @@ st.caption("제품 정보를 입력하면 실제 사용 후기 느낌의 리뷰�
 with st.form("review_form"):
     product_name = st.text_input("상품명 *", placeholder="예: 무선 진공청소기")
     model_no = st.text_input("모델명", placeholder="예: XV-2000")
+    price = st.text_input("가격(쿠팡 최저가 기준)", placeholder="예: 49,900원")
+    usage_info = st.text_area(
+        "사용법 / 주요 기능 (선택)", placeholder="예: 물걸레 겸용, 무선 충전식, 최대 40분 사용 가능"
+    )
     product_url = st.text_input(
-        "상품 설명 URL (선택)", placeholder="예: https://www.example.com/product/12345"
+        "상품 설명 URL (선택, 읽어오지 못할 수도 있으니 위 사용법 입력란과 함께 활용)",
+        placeholder="예: https://www.example.com/product/12345",
     )
     usage_context = st.text_input(
         "사용 기간 / 상황 (선택)", placeholder="예: 2주간 매일 거실 청소에 사용"
@@ -145,7 +154,9 @@ if submitted:
             st.warning(f"URL에서 정보를 가져오지 못했습니다 ({e}). 나머지 정보만으로 리뷰를 생성합니다.")
 
     with st.spinner("리뷰 초안을 작성하는 중..."):
-        draft_prompt = build_draft_prompt(product_name, model_no, page_info, usage_context, length)
+        draft_prompt = build_draft_prompt(
+            product_name, model_no, price, usage_info, page_info, usage_context, length
+        )
         draft = call_model([draft_prompt, *images])
 
     if len(draft) < length * 0.7 or len(draft) > length * 1.3:
