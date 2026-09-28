@@ -1,6 +1,8 @@
 import os
 
+import requests
 import streamlit as st
+from bs4 import BeautifulSoup
 from dotenv import load_dotenv
 import google.generativeai as genai
 from PIL import Image
@@ -35,14 +37,27 @@ genai.configure(api_key=API_KEY)
 model = genai.GenerativeModel(MODEL_NAME)
 
 
-def build_draft_prompt(product_name, model_no, usage_info, usage_context, length):
+def fetch_page_text(url, max_chars=4000):
+    headers = {"User-Agent": "Mozilla/5.0 (compatible; ReviewGeneratorBot/1.0)"}
+    response = requests.get(url, headers=headers, timeout=10)
+    response.raise_for_status()
+
+    soup = BeautifulSoup(response.text, "html.parser")
+    for tag in soup(["script", "style", "noscript"]):
+        tag.decompose()
+
+    text = " ".join(soup.stripped_strings)
+    return text[:max_chars]
+
+
+def build_draft_prompt(product_name, model_no, page_info, usage_context, length):
     return f"""당신은 이 제품을 실제로 구매해서 사용해 본 일반 소비자입니다.
 아래 정보를 참고해서, 쇼핑몰 리뷰 게시판에 올릴 법한 실제 사용 후기를 작성하세요.
 
 [제품 정보]
 - 상품명: {product_name}
 - 모델명: {model_no or "미기재"}
-- 사용법/특징: {usage_info or "미기재"}
+- 상품 설명 페이지 내용(자동 추출): {page_info or "미기재"}
 - 사용 기간/상황: {usage_context or "미기재"}
 
 [작성 규칙]
@@ -97,8 +112,8 @@ st.caption("제품 정보를 입력하면 실제 사용 후기 느낌의 리뷰�
 with st.form("review_form"):
     product_name = st.text_input("상품명 *", placeholder="예: 무선 진공청소기")
     model_no = st.text_input("모델명", placeholder="예: XV-2000")
-    usage_info = st.text_area(
-        "사용법 / 주요 기능", placeholder="예: 물걸레 겸용, 무선 충전식, 최대 40분 사용 가능"
+    product_url = st.text_input(
+        "상품 설명 URL (선택)", placeholder="예: https://www.example.com/product/12345"
     )
     usage_context = st.text_input(
         "사용 기간 / 상황 (선택)", placeholder="예: 2주간 매일 거실 청소에 사용"
@@ -121,8 +136,16 @@ if submitted:
 
     images = [Image.open(f) for f in photos] if photos else []
 
+    page_info = ""
+    if product_url.strip():
+        try:
+            with st.spinner("상품 설명 페이지에서 정보를 가져오는 중..."):
+                page_info = fetch_page_text(product_url.strip())
+        except Exception as e:
+            st.warning(f"URL에서 정보를 가져오지 못했습니다 ({e}). 나머지 정보만으로 리뷰를 생성합니다.")
+
     with st.spinner("리뷰 초안을 작성하는 중..."):
-        draft_prompt = build_draft_prompt(product_name, model_no, usage_info, usage_context, length)
+        draft_prompt = build_draft_prompt(product_name, model_no, page_info, usage_context, length)
         draft = call_model([draft_prompt, *images])
 
     if len(draft) < length * 0.7 or len(draft) > length * 1.3:
