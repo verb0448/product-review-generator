@@ -7,15 +7,27 @@ from PIL import Image
 
 load_dotenv()
 
-API_KEY = os.getenv("GEMINI_API_KEY")
-MODEL_NAME = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+
+def get_secret(name, default=None):
+    value = os.getenv(name)
+    if value:
+        return value
+    try:
+        return st.secrets[name]
+    except Exception:
+        return default
+
+
+API_KEY = get_secret("GEMINI_API_KEY")
+MODEL_NAME = get_secret("GEMINI_MODEL", "gemini-2.5-flash")
 
 st.set_page_config(page_title="상품 리뷰 생성기", page_icon="📝")
 
 if not API_KEY:
     st.error(
         "GEMINI_API_KEY가 설정되어 있지 않습니다. "
-        ".env 파일을 만들고 API 키를 입력해주세요. (.env.example 참고)"
+        "로컬에서는 .env 파일에, Streamlit Cloud에서는 앱 Settings의 Secrets에 입력해주세요. "
+        "(.env.example 참고)"
     )
     st.stop()
 
